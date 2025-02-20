@@ -14,7 +14,7 @@ project_files_folders_to_ignore = [folder.strip() for folder in project_files_fo
 
 baseURL = "http://" + url + "/fs"
 
-def get_all_files_from_device(base_url, path='', files=None):
+def device_get_all_files(base_url, path='', files=None):
 
     if files is None:
         files = {}
@@ -27,7 +27,7 @@ def get_all_files_from_device(base_url, path='', files=None):
             data = response.json()
             for file in data.get("files", []):                
                 if file.get("directory", True):  # If it's a directory, call recursively
-                    get_all_files_from_device(base_url, path=file['name'] + '/', files=files)
+                    device_get_all_files(base_url, path=file['name'] + '/', files=files)
                 else:
                     full_file_name = path + file['name']
                     if full_file_name not in files:  # Prevent adding already existing files
@@ -41,6 +41,37 @@ def get_all_files_from_device(base_url, path='', files=None):
         print(f"Error {response.status_code}: {response.reason}")
 
     return files
+
+def device_remove_files(base_url, files):
+
+    for file_path in files.keys():
+        delete_url = f"{base_url}/{file_path}"
+        response = requests.delete(delete_url, auth=("", password))
+
+        if response.status_code != 200:
+            print(f"Failed to delete {file_path}: {response.status_code} - {response.reason}")
+
+    return
+
+def device_copy_files(base_url, files):
+    for file_path, dest_name in files.items():
+        if not os.path.isfile(file_path):
+            print(f"File not found: {file_path}")
+            continue
+
+        with open(file_path, "rb") as f:
+            file_content = f.read()
+
+        # Define the destination URL using the destination file name
+        dest_url = f"{base_url}/{dest_name}"
+
+        # Send the file using PUT request
+        put_response = requests.put(dest_url, data=file_content, auth=("", password), headers={"X-Timestamp": str(os.path.getmtime(file_path))})
+
+        if put_response.status_code not in [201, 204]:
+            print(f"Failed to copy {file_path}: {put_response.status_code} - {put_response.reason}")
+
+    return
 
 def get_all_files_from_project_folder(path='.', files=None):
     if files is None:
@@ -60,10 +91,9 @@ def get_all_files_from_project_folder(path='.', files=None):
 
     return files  # Return the dictionary in the same format as the device function
 
-def filter_files_folders(files_folders_dict, filter_list):
-
+def filter_files(files_folders_dict, filter_dict):
     return {file_name: file_info for file_name, file_info in files_folders_dict.items()
-            if not any(ignored in file_name for ignored in filter_list)}
+            if not any(ignored in file_name for ignored in filter_dict.keys())}
 
 def filter_files_folders_by_date_higher(files_folders_dict, filter_list_dict):
     filtered_files = {}
@@ -112,27 +142,32 @@ def create_parent_directory(relative_path):
 #      Ignore the DEVICE_FILES_FOLDERS_TO_IGNORE.
 #
 #   4. Copy all files and folders from the project to the device that do not exist on the device.
+#      Overwrite the files that are more recent.
 #      Ignore the PROJECT_FILES_FOLDERS_TO_IGNORE.
-
 
 # Following the # CircuitPython Files Rest API:
 # https://docs.circuitpython.org/en/latest/docs/workflows.html
 
 
 # Get a list of all device folders and files
-device_files = get_all_files_from_device(baseURL)
-device_files_without_ignored = filter_files_folders(device_files, device_files_folders_to_ignore)
+device_files = device_get_all_files(baseURL)
+device_files_without_ignored = filter_files(device_files, device_files_folders_to_ignore)
 
 # Get a list of all project folders and files
 project_files = get_all_files_from_project_folder()
-project_files_without_ignored = filter_files_folders(project_files, project_files_folders_to_ignore)
+project_files_without_ignored = filter_files(project_files, project_files_folders_to_ignore)
 
+# Remove files on device that do not exist on the project
+# Ignore the DEVICE_FILES_FOLDERS_TO_IGNORE.
+files_to_remove = filter_files(device_files_without_ignored, project_files_without_ignored)
+device_remove_files(baseURL, files_to_remove)
 
-# first copy local files to device
-files_to_copy = filter_files_folders_by_date_higher(project_files_without_ignored, device_files)
+# Copy all files and folders from the project to the device that do not exist on the device.
+# Overwrite the files that are more recent.
+# Ignore the PROJECT_FILES_FOLDERS_TO_IGNORE.
+files_to_copy = filter_files_folders_by_date_higher(project_files_without_ignored, device_files_without_ignored)
+device_copy_files(baseURL, files_to_copy, )
 
-# remove files on device that do not exist locally
-files_to_remove = filter_files_folders_by_date_higher(project_files_without_ignored, device_files)
 
 if files_to_copy:
     for file_name, file_info in files_to_copy.items():
