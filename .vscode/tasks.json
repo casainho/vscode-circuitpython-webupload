@@ -6,7 +6,7 @@
         {
             "label": "Upload",
             "type": "shell",
-            "command": "python3 .vscode/cp-web-upload.py '${workspaceFolder}' '${relativeFile}'",
+            "command": "python3 .vscode/cp_web_upload.py '${workspaceFolder}' '${relativeFile}'",
             "presentation": {
                 "echo": true,
                 "reveal": "silent",

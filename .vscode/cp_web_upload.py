@@ -4,15 +4,64 @@ import requests
 from dotenv import load_dotenv
 load_dotenv()
 
+def main():
+    ############################################################################
+    #
+    # The idea is to mirror the project files and folders to the CircuitPyhton
+    # device memory - example ESP32-C3.
+    #
+    # Steps:
+    #
+    #   1. Get a list of all device folders and files
+    #
+    #   2. Get a list of all project folders and files
+    #
+    #   3. Remove all files and folders on the device that do not exist on the project.
+    #      Ignore the DEVICE_FILES_FOLDERS_TO_IGNORE.
+    #
+    #   4. Copy all files and folders from the project to the device that do not exist on the device.
+    #      Overwrite the files that are more recent.
+    #      Ignore the PROJECT_FILES_FOLDERS_TO_IGNORE.
+
+    # Following the # CircuitPython Files Rest API:
+    # https://docs.circuitpython.org/en/latest/docs/workflows.html
+
+
+    # Get a list of all device folders and files
+    device_files = device_get_all_files(baseURL)
+    device_files_filtered = filter_files(device_files, device_files_folders_to_ignore)
+
+    # Get a list of all project folders and files
+    project_files = project_get_all_files()
+    project_files_filtered = filter_files(project_files, project_files_folders_to_ignore)
+
+    # Remove files on device that do not exist on the project
+    # Ignore the DEVICE_FILES_FOLDERS_TO_IGNORE.
+    files_to_remove = filter_files(device_files_filtered, project_files_filtered)
+    device_remove_files(baseURL, files_to_remove)
+
+    # Copy all files and folders from the project to the device that do not exist on the device.
+    # Overwrite the files that are more recent.
+    # Ignore the PROJECT_FILES_FOLDERS_TO_IGNORE.
+    files_to_copy = filter_files_date_higher(project_files_filtered, device_files_filtered)
+    device_copy_files(baseURL, files_to_copy)
+    
+    print("finished")
+    
+
 # Get variables from .env file
 url = os.getenv("URL")
 password = os.getenv("CIRCUITPY_WEB_API_PASSWORD")
 device_files_folders_to_ignore = os.getenv("DEVICE_FILES_FOLDERS_TO_IGNORE").split(",")
 device_files_folders_to_ignore = [folder.strip() for folder in device_files_folders_to_ignore]
+device_files_folders_to_ignore = {item: {} for item in device_files_folders_to_ignore}
+
 project_files_folders_to_ignore = os.getenv("PROJECT_FILES_FOLDERS_TO_IGNORE", "").split(",")
 project_files_folders_to_ignore = [folder.strip() for folder in project_files_folders_to_ignore]
+project_files_folders_to_ignore = {item: {} for item in project_files_folders_to_ignore}
 
 baseURL = "http://" + url + "/fs"
+
 
 def device_get_all_files(base_url, path='', files=None):
 
@@ -42,6 +91,7 @@ def device_get_all_files(base_url, path='', files=None):
 
     return files
 
+
 def device_remove_files(base_url, files):
 
     for file_path in files.keys():
@@ -53,8 +103,9 @@ def device_remove_files(base_url, files):
 
     return
 
+
 def device_copy_files(base_url, files):
-    for file_path, dest_name in files.items():
+    for file_path, file_properties in files.items():
         if not os.path.isfile(file_path):
             print(f"File not found: {file_path}")
             continue
@@ -63,7 +114,7 @@ def device_copy_files(base_url, files):
             file_content = f.read()
 
         # Define the destination URL using the destination file name
-        dest_url = f"{base_url}/{dest_name}"
+        dest_url = f"{base_url}/{file_path}"
 
         # Send the file using PUT request
         put_response = requests.put(dest_url, data=file_content, auth=("", password), headers={"X-Timestamp": str(os.path.getmtime(file_path))})
@@ -73,7 +124,8 @@ def device_copy_files(base_url, files):
 
     return
 
-def get_all_files_from_project_folder(path='.', files=None):
+
+def project_get_all_files(path='.', files=None):
     if files is None:
         files = {}
 
@@ -89,20 +141,22 @@ def get_all_files_from_project_folder(path='.', files=None):
                     'modified_ns': file_stat.st_mtime_ns
                 }
 
-    return files  # Return the dictionary in the same format as the device function
+    return files
+
 
 def filter_files(files_folders_dict, filter_dict):
     return {file_name: file_info for file_name, file_info in files_folders_dict.items()
             if not any(ignored in file_name for ignored in filter_dict.keys())}
 
-def filter_files_folders_by_date_higher(files_folders_dict, filter_list_dict):
+
+def filter_files_date_higher(files_folders_dict, filter_dict):
     filtered_files = {}
 
     for file_name, file_info in files_folders_dict.items():
         should_ignore = False
         
         # Check if the file name is in the filter list dictionary
-        for ignored_file_name, ignored_file_info in filter_list_dict.items():
+        for ignored_file_name, ignored_file_info in filter_dict.items():
             if ignored_file_name in file_name:
                 # If the file name is in the ignored list, compare modification dates
                 if file_info['modified_ns'] <= ignored_file_info['modified_ns']:
@@ -127,71 +181,5 @@ def create_parent_directory(relative_path):
         print(dir_response.status_code, dir_response.reason)
 
 
-############################################################################
-#
-# The idea is to mirror the project files and folders to the CircuitPyhton
-# device memory - example ESP32-C3.
-#
-# Steps:
-#
-#   1. Get a list of all device folders and files
-#
-#   2. Get a list of all project folders and files
-#
-#   3. Remove all files and folders on the device that do not exist on the project.
-#      Ignore the DEVICE_FILES_FOLDERS_TO_IGNORE.
-#
-#   4. Copy all files and folders from the project to the device that do not exist on the device.
-#      Overwrite the files that are more recent.
-#      Ignore the PROJECT_FILES_FOLDERS_TO_IGNORE.
-
-# Following the # CircuitPython Files Rest API:
-# https://docs.circuitpython.org/en/latest/docs/workflows.html
-
-
-# Get a list of all device folders and files
-device_files = device_get_all_files(baseURL)
-device_files_without_ignored = filter_files(device_files, device_files_folders_to_ignore)
-
-# Get a list of all project folders and files
-project_files = get_all_files_from_project_folder()
-project_files_without_ignored = filter_files(project_files, project_files_folders_to_ignore)
-
-# Remove files on device that do not exist on the project
-# Ignore the DEVICE_FILES_FOLDERS_TO_IGNORE.
-files_to_remove = filter_files(device_files_without_ignored, project_files_without_ignored)
-device_remove_files(baseURL, files_to_remove)
-
-# Copy all files and folders from the project to the device that do not exist on the device.
-# Overwrite the files that are more recent.
-# Ignore the PROJECT_FILES_FOLDERS_TO_IGNORE.
-files_to_copy = filter_files_folders_by_date_higher(project_files_without_ignored, device_files_without_ignored)
-device_copy_files(baseURL, files_to_copy, )
-
-
-if files_to_copy:
-    for file_name, file_info in files_to_copy.items():
-        print(f"{file_name}, {file_info['file_size']}, {file_info['modified_ns']}")
-
-# response = requests.put(baseURL + relativeFile, data=open(workspaceFolder + "/" + relativeFile,"rb"), auth=("",password))
-# if(response.status_code ==  201):
-#     print("Created file:", relativeFile)
-# elif(response.status_code == 204):
-#     print("Overwrote file:", relativeFile)
-# elif(response.status_code == 401):
-#     print("Incorrect password")
-# elif(response.status_code == 403):
-#     print("CIRCUITPY_WEB_API_PASSWORD not set")
-# elif(response.status_code == 404):
-#     print("Missing parent directory")
-#     create_parent_directory(relativeFile)
-#     retry_response = requests.put(baseURL + relativeFile, data=open(workspaceFolder + "/" + relativeFile,"rb"), auth=("",password))
-#     if(retry_response.status_code ==  201):
-#         print("Created file:", relativeFile)
-#     else:
-#         print(retry_response.status_code, retry_response.reason)
-# elif(response.status_code == 409):
-#     print("USB is active and preventing file system modification")
-# else:
-#     print(response.status_code, response.reason)
-
+if __name__ == "__main__":  # Only run main() when the script is executed directly
+    main()
