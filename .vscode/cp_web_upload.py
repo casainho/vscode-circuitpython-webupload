@@ -1,4 +1,3 @@
-import sys
 import os
 import requests
 from dotenv import load_dotenv
@@ -7,40 +6,44 @@ from pathlib import Path
 import time
 
 def main():
-    # Following the # CircuitPython Files Rest API:
+    # Following the CircuitPython Files Rest API:
     # https://docs.circuitpython.org/en/latest/docs/workflows.html
 
     source_dir = Path('.').resolve()
     base_url = 'http://' + url
     
+    # Get the list of files and folders from the device
     device_files = list_device_files(base_url, password)
 
-    # Sync local folders to device
+    # Copy project files and folders to device
     for src_path in source_dir.rglob('*'):
         rel_path = src_path.relative_to(source_dir)
         device_path = rel_path.as_posix()
 
+        # Should this file / folder be ignored? base on configs:
+        # DEVICE_FILES_FOLDERS_TO_IGNORE
+        # PROJECT_FILES_FOLDERS_TO_IGNORE
         if should_ignore(rel_path):
-            print(f"Ignored: {rel_path}")
             continue
 
+        # If is a directory, create it on the device
         if src_path.is_dir():
             if device_path not in device_files:
                 create_device_folder(base_url, device_path)
+        # If is a file, copy it to the device
         else:
             upload_file(base_url, src_path, device_path, device_files)
 
     # Remove extra device files and folders
     device_paths = {item['name'] for item in device_files}
-    
     local_paths = {p.relative_to(source_dir).as_posix() for p in source_dir.rglob('*') if not should_ignore(p.relative_to(source_dir))}
-
+    
+    # Remove files and folders on device that do not exist on the project
     for device_path in device_paths - local_paths:
         if not should_ignore(Path(device_path)):
             delete_device_file_or_folder(base_url, device_path)
-        else:
-            print(f"Ignored to delete on device: {device_path}")
     
+    # And it is finished
     print("finished")
     
 
@@ -56,7 +59,7 @@ project_files_folders_to_ignore = set(os.getenv('PROJECT_FILES_FOLDERS_TO_IGNORE
 project_files_folders_to_ignore = [file_folder.strip() for file_folder in project_files_folders_to_ignore]
 project_files_folders_to_ignore = set(project_files_folders_to_ignore)
 
-baseURL = "http://" + url + "/fs"
+baseURL = "http://" + url + "/fs/"
 
 
 def should_ignore(path):
@@ -66,7 +69,7 @@ def should_ignore(path):
 
 def list_device_files(base_url, password):
     
-    response = requests.get(f"{base_url}/fs/", auth=("", password), headers={"Accept": "application/json"})
+    response = requests.get(baseURL, auth=("", password), headers={"Accept": "application/json"})
     if response.status_code == 200:
         try:
             data = response.json()
@@ -81,11 +84,11 @@ def list_device_files(base_url, password):
 
 
 def create_device_folder(base_url, device_path):
-    response = requests.put(base_url + '/fs/' + device_path + '/', auth=("",password), headers={"X-Timestamp": str(time.time_ns)})
+    response = requests.put(baseURL + device_path + '/', auth=("",password), headers={"X-Timestamp": str(time.time_ns)})
     if(response.status_code == 201):
         print("Directory created:", device_path)
     elif(response.status_code == 204):
-        print("Directory already exist:", device_path)
+        print("Skipped (already exist):", device_path)
     else:
         print("Failed to create directory:", response.status_code, response.reason)
 
@@ -103,11 +106,10 @@ def upload_file(base_url, src_path, device_path, device_files):
         device_timestamp_ns = device_file_info.get('modified_ns')
 
     if device_timestamp_ns and local_timestamp_ns <= device_timestamp_ns:
-        print(f"Skipped (up-to-date): {device_path}")
         return
 
     with open(src_path, 'rb') as file: 
-        response = requests.put(f"{base_url}/fs/{device_path}", data=file, auth=("", password), headers={"X-Timestamp": str(time.time_ns)})
+        response = requests.put(baseURL + device_path, data=file, auth=("", password), headers={"X-Timestamp": str(time.time_ns)})
         if response.status_code not in [201, 204]:
             print(f"Failed to copy {device_path}: {response.status_code} - {response.reason}")
         else:
@@ -115,11 +117,11 @@ def upload_file(base_url, src_path, device_path, device_files):
 
 
 def delete_device_file_or_folder(base_url, device_path):
-    response = requests.delete(f"{base_url}/fs/{device_path}", auth=("", password))    
+    response = requests.delete(f"{base_url}{device_path}", auth=("", password))    
     if response.status_code == 200:
         print(f"Deleted: {device_path}")
     elif response.status_code == 204:
-        print(f"Existed and deleted: {device_path}")
+        print(f"Deleted: {device_path}")
     else:
         print(f"Failed to delete {device_path}: {response.status_code}")
         
