@@ -4,12 +4,13 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Upload",
+            "label": "Update device files",
             "type": "shell",
-            "command": "python3 .vscode/cp_web_upload.py '${workspaceFolder}' '${relativeFile}'",
+            "command": "python3 .vscode/cp_web_upload.py",
             "presentation": {
                 "echo": true,
-                "reveal": "silent",
+                // "reveal": "silent", // do not show output
+                "reveal": "always", // show the output
                 "focus": false,
                 "panel": "shared",
                 "showReuseMessage": true,
