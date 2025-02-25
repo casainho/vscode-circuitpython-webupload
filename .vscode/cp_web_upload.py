@@ -10,7 +10,7 @@ def main():
     # https://docs.circuitpython.org/en/latest/docs/workflows.html
 
     source_dir = Path('.').resolve()
-    base_url = 'http://' + url
+    base_url = 'http://' + url + '/fs/'
     
     # Get the list of files and folders from the device
     device_files = list_device_files(base_url, password)
@@ -59,9 +59,6 @@ project_files_folders_to_ignore = set(os.getenv('PROJECT_FILES_FOLDERS_TO_IGNORE
 project_files_folders_to_ignore = [file_folder.strip() for file_folder in project_files_folders_to_ignore]
 project_files_folders_to_ignore = set(project_files_folders_to_ignore)
 
-baseURL = "http://" + url + "/fs/"
-
-
 def should_ignore(path):
     parts = set(path.parts)
     return parts & device_files_folders_to_ignore or parts & project_files_folders_to_ignore
@@ -69,7 +66,7 @@ def should_ignore(path):
 
 def list_device_files(base_url, password):
     
-    response = requests.get(baseURL, auth=("", password), headers={"Accept": "application/json"})
+    response = requests.get(base_url, auth=("", password), headers={"Accept": "application/json"})
     if response.status_code == 200:
         try:
             data = response.json()
@@ -84,7 +81,7 @@ def list_device_files(base_url, password):
 
 
 def create_device_folder(base_url, device_path):
-    response = requests.put(baseURL + device_path + '/', auth=("",password), headers={"X-Timestamp": str(time.time_ns)})
+    response = requests.put(base_url + device_path + '/', auth=("",password), headers={"X-Timestamp": str(int(time.time_ns()/1000000))})
     if(response.status_code == 201):
         print("Directory created:", device_path)
     elif(response.status_code == 204):
@@ -107,9 +104,9 @@ def upload_file(base_url, src_path, device_path, device_files):
 
     if device_timestamp_ns and local_timestamp_ns <= device_timestamp_ns:
         return
-
-    with open(src_path, 'rb') as file: 
-        response = requests.put(baseURL + device_path, data=file, auth=("", password), headers={"X-Timestamp": str(time.time_ns)})
+    
+    with open(src_path, 'rb') as file:
+        response = requests.put(base_url + device_path, data=file, auth=("", password), headers={"X-Timestamp": str(int(time.time_ns()/1000000))})
         if response.status_code not in [201, 204]:
             print(f"Failed to copy {device_path}: {response.status_code} - {response.reason}")
         else:
@@ -117,7 +114,7 @@ def upload_file(base_url, src_path, device_path, device_files):
 
 
 def delete_device_file_or_folder(base_url, device_path):
-    response = requests.delete(f"{base_url}{device_path}", auth=("", password))    
+    response = requests.delete(base_url + device_path, auth=("", password))    
     if response.status_code == 200:
         print(f"Deleted: {device_path}")
     elif response.status_code == 204:
